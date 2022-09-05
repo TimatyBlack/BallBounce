@@ -2,44 +2,55 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
-using UnityEngine.UI;
-
+using Tween_Library.Scripts;
+using Tween_Library.Scripts.Effects;
 public class BallPhysics : MonoBehaviour
 {
+    public ITransformEffect _transformEffect;
+    public IColorTweenEffect _colorEffect;
+    private YieldInstruction _wait;
+    private MeshRenderer ballRenderer;
+
+    [SerializeField] private float scaleSpeed = 1f;
+    [SerializeField] private float waitTime;
+    [SerializeField] private Color newColor;
+    [SerializeField] private GameObject ball;
+    
     [field: SerializeField] public Vector3 velocity {get; private set;}
     [SerializeField] private float drag;
     [SerializeField] private LayerMask bounceObjects;
-    private Transform ball;
+    [SerializeField]private Transform ballVisual;
+    private Transform ballPos;
     private Vector3 lastVelocity;
     private float xRotation;
 
     public GameObject hitParticle;
-    public GameObject shatterParticle;
 
-    public TMP_Text moneyCounter;
-    public int money;
-    // Start is called before the first frame update
-    void Start()
+    private Coroutine previousColorCoroutine;
+    private Coroutine previousTransformCoroutine;
+
+    private void Awake()
     {
-        money = 0;
-        ball = transform;
+        ballRenderer = ballVisual.GetComponent<MeshRenderer>();
+        ballPos = transform;
+        _wait = new WaitForSeconds(waitTime);
+        _colorEffect = new ColorChangeEffect(ballRenderer.material, newColor, ball, _wait);
+        _transformEffect = new TransformEffect(ballPos, scaleSpeed, _wait);
     }
-
-    // Update is called once per frame
+    
     void FixedUpdate()
     {
-        ball.position = ball.position + velocity * Time.deltaTime;
-        velocity = Vector3.Lerp(velocity, Vector3.zero, Time.deltaTime);
+        ballPos.position = ballPos.position + velocity * Time.deltaTime;
+        velocity = Vector3.Slerp(velocity, Vector3.zero, Time.deltaTime);
         lastVelocity = velocity;
         xRotation += velocity.magnitude * 2;
 
-        Quaternion forwardRotation = Quaternion.LookRotation(velocity);
         float targetAngle = Mathf.Atan2(velocity.x, velocity.z) * Mathf.Rad2Deg;
         
 
         Vector3 crossProduct = Vector3.Cross(velocity, Vector3.up).normalized;
-        ball.Rotate(crossProduct, -velocity.magnitude * 5, Space.World);
-        Debug.DrawRay(ball.position,crossProduct * 2, Color.red, 1f);
+        ballVisual.Rotate(crossProduct, -velocity.magnitude * 5, Space.World);
+        Debug.DrawRay(ballPos.position,crossProduct * 2, Color.red, 1f);
     } 
 
     public void AddForce(Vector3 force)
@@ -49,40 +60,40 @@ public class BallPhysics : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {   
-        Vector3 collisionPoint = other.ClosestPoint(ball.position);
+        Vector3 collisionPoint = other.ClosestPoint(ballPos.position);
 
         if (other.CompareTag("wall"))
         {
+            Tween();
+            
             Instantiate(hitParticle, collisionPoint, other.transform.rotation); 
+
             RaycastHit hit;
-            Physics.Raycast(ball.position, collisionPoint - ball.position, out hit, 5, bounceObjects);
+            Physics.Raycast(ballPos.position, collisionPoint - ballPos.position, out hit, 5, bounceObjects);
+            
             Vector3 bounceDirection = Vector3.Reflect(velocity.normalized, hit.normal);
             bounceDirection.y = 0;
             velocity = bounceDirection * (lastVelocity.magnitude * 0.8f);
-            Debug.Log("trigger");
-            Debug.DrawRay(ball.position, bounceDirection, Color.red, 1f);
-        }
 
-        if(other.CompareTag("Coin"))
+            Debug.DrawRay(ballPos.position, bounceDirection, Color.red, 1f);
+        }
+    }
+
+    private void Tween()
+    {
+        StopAllCoroutines();
+        if (velocity.magnitude > 0.7f)
         {
-            Instantiate(shatterParticle, other.transform.position, shatterParticle.transform.rotation);
-            Destroy(other.gameObject);
-            money += 50;
-
+            if (previousColorCoroutine != null)
+            {
+                StopCoroutine(previousColorCoroutine);
+            }
+            if (previousTransformCoroutine != null)
+            {
+                StopCoroutine(previousTransformCoroutine);
+            }
+            previousColorCoroutine = StartCoroutine(_colorEffect.Execute());
+            previousTransformCoroutine = StartCoroutine(_transformEffect.Execute(Vector3.one * 1.15f));
         }
-
-       
-    }
-
-    private void OnTriggerStay(Collider other)
-    {
-        Vector3 collisionPoint = other.ClosestPoint(ball.position);
-        collisionPoint.y = ball.position.y;
-        Vector3 collisionDirection = ball.position - collisionPoint;
-        AddForce(collisionDirection);
-    }
-    public void Update()
-    {
-        moneyCounter.text = money.ToString();
     }
 }
